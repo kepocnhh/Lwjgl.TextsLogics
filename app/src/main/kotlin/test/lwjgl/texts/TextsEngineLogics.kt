@@ -2,6 +2,7 @@ package test.lwjgl.texts
 
 import org.lwjgl.BufferUtils
 import org.lwjgl.opengl.GL11
+import org.lwjgl.stb.STBTTAlignedQuad
 import org.lwjgl.stb.STBTTFontinfo
 import org.lwjgl.stb.STBTTPackContext
 import org.lwjgl.stb.STBTTPackedchar
@@ -12,13 +13,21 @@ import sp.kx.lwjgl.engine.EngineInputCallback
 import sp.kx.lwjgl.engine.EngineLogics
 import sp.kx.lwjgl.entity.Canvas
 import sp.kx.lwjgl.entity.Color
+import sp.kx.lwjgl.entity.copy
 import sp.kx.lwjgl.entity.font.FontInfo
 import sp.kx.lwjgl.entity.input.KeyboardButton
+import sp.kx.lwjgl.glfw.GLFWUtil
+import sp.kx.lwjgl.opengl.GLUtil
+import sp.kx.lwjgl.stb.STBUtil
 import sp.kx.lwjgl.stb.isAvailable
 import sp.kx.lwjgl.stb.pack
+import sp.kx.lwjgl.stb.packFontRange
+import sp.kx.lwjgl.stb.toFontVMetrics
 import sp.kx.lwjgl.util.toArray
 import sp.kx.math.measure.measureOf
+import sp.kx.math.plus
 import sp.kx.math.pointOf
+import sp.kx.math.sizeOf
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -40,8 +49,8 @@ internal class TextsEngineLogics(
         }
     }
     private val measure = measureOf(24.0)
-//    private val fontName = "JetBrainsMono.ttf"
-    private val fontName = "OpenSans.ttf"
+    private val fontName = "JetBrainsMono.ttf"
+//    private val fontName = "OpenSans.ttf"
     private val fontInfo = object : FontInfo {
         override val height = measure.transform(0.75).toFloat()
         override val id = fontName
@@ -67,6 +76,7 @@ internal class TextsEngineLogics(
     )
 
     private val fonts = mutableMapOf<String, MutableFonts>()
+
     private fun getFonts(fontName: String): MutableFonts {
         return fonts.getOrPut(fontName) {
             val fontBytes = Thread.currentThread().contextClassLoader.getResourceAsStream(fontName)!!.use { it.readBytes() }
@@ -82,52 +92,119 @@ internal class TextsEngineLogics(
             )
         }
     }
+
+    private fun getScale(info: STBTTFontinfo, fontHeight: Float): Float {
+        return STBTruetype.stbtt_ScaleForPixelHeight(info, fontHeight)
+    }
+
     private fun STBFontInfo.toFontTexture(fontHeight: Float): FontTexture {
-        val id = GL11.glGenTextures()
-        val chars = Char.MIN_VALUE..Char.MAX_VALUE
-        val width = MemoryStack.stackPush().use { stack ->
-            val widthBuffer = stack.mallocInt(1)
-            chars.sumOf { char ->
-                STBTruetype.stbtt_GetCodepointHMetrics(delegate, char.code, widthBuffer, null)
-                widthBuffer.get(0)
-            }
-        }
+        val width: Int = (fontHeight * 128.0).toInt()
+        val height: Int = (fontHeight * 16.0).toInt()
         val limit = Char.MAX_VALUE.code
         val charBuffer = STBTTPackedchar.malloc(limit)
-//        val pixels = BufferUtils.createByteBuffer(1)
-//        STBTTPackContext.malloc().use { context ->
-//            context.pack(
-//                pixels = pixels,
-//                width = width,
-//                height = height,
-//            ) {
-//                charBuffer.limit(limit)
-//                charBuffer.position(position)
-//
-//                STBTruetype.stbtt_PackSetOversampling(context, 2, 2)
-//
-//                context.packFontRange(
-//                    fontByteBuffer = fontByteBuffer,
-//                    fontIndex = 0,
-//                    fontSize = fontVMetrics.ascent - fontVMetrics.descent,
-//                    firstUnicodeCharInRange = position,
-//                    charBufferForRange = charBuffer,
-//                )
-//                charBuffer.clear()
+        val position = Char.MIN_VALUE.code
+        val fontVMetrics = delegate.toFontVMetrics(fontHeight = fontHeight)
+        val pixels = BufferUtils.createByteBuffer(width * height)
+        STBTTPackContext.malloc().use { context ->
+            context.pack(
+                pixels = pixels,
+                width = width,
+                height = height,
+            ) {
+                charBuffer.limit(limit)
+                charBuffer.position(position)
+                STBTruetype.stbtt_PackSetOversampling(context, 2, 2)
+                context.packFontRange(
+                    fontByteBuffer = container,
+                    fontIndex = 0,
+                    fontSize = fontVMetrics.ascent - fontVMetrics.descent,
+                    firstUnicodeCharInRange = position,
+                    charBufferForRange = charBuffer,
+                )
+                charBuffer.clear()
+            }
+        }
+        val textureId = GL11.glGenTextures()
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId)
+        GLFWUtil.texImage2D(
+            textureTarget = GL11.GL_TEXTURE_2D,
+            textureInternalFormat = GL11.GL_ALPHA,
+            width = width,
+            height = height,
+            texelDataFormat = GL11.GL_ALPHA,
+            texelDataType = GL11.GL_UNSIGNED_BYTE,
+            pixels = pixels,
+        )
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR)
+        return FontTexture(
+            id = textureId,
+            charBuffer = charBuffer,
+        )
+    }
+
+    private fun STBFontInfo.toFontTextureOld(fontHeight: Float): FontTexture {
+        val id = GL11.glGenTextures()
+        val chars = 0..126
+        val scale = getScale(info = delegate, fontHeight = fontHeight)
+        val ascentBuffer = BufferUtils.createIntBuffer(1)
+        val descentBuffer = BufferUtils.createIntBuffer(1)
+        STBTruetype.stbtt_GetFontVMetrics(delegate, ascentBuffer, descentBuffer, null)
+//        val width = MemoryStack.stackPush().use { stack ->
+//            val widthBuffer = stack.mallocInt(1)
+//            chars.sumOf { char ->
+//                STBTruetype.stbtt_GetCodepointHMetrics(delegate, char, widthBuffer, null)
+//                widthBuffer.get(0)
 //            }
-//        }
-//        GL11.glBindTexture(GL11.GL_TEXTURE_2D, id)
-//        GLFWUtil.texImage2D(
-//            textureTarget = GL11.GL_TEXTURE_2D,
-//            textureInternalFormat = GL11.GL_ALPHA,
-//            width = width,
-//            height = height,
-//            texelDataFormat = GL11.GL_ALPHA,
-//            texelDataType = GL11.GL_UNSIGNED_BYTE,
-//            pixels = pixels,
-//        )
-//        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR)
-//        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR)
+//        } * scale
+        val width: Int = (fontHeight * 128.0).toInt() // todo
+        val limit = chars.toList().size
+        val charBuffer = STBTTPackedchar.malloc(limit)
+//        val height = fontHeight // todo
+//        val height = fontHeight * 2 // todo
+        val height: Int = (fontHeight * 16.0).toInt() // todo
+        val pixels = BufferUtils.createByteBuffer((width * height).toInt())
+//        val pixels = BufferUtils.createByteBuffer(1024 * 1024)
+        println("width: $width")
+        println("fontHeight: $fontHeight")
+        println("height: $height")
+        println("scale: $scale")
+        println("ascent: ${ascentBuffer[0]}")
+        println("descent: ${descentBuffer[0]}")
+        println("a - d: ${ascentBuffer[0] - descentBuffer[0]}")
+        println("a - d * s: ${(ascentBuffer[0] - descentBuffer[0]) * scale}")
+        STBTTPackContext.malloc().use { context ->
+            context.pack(
+                pixels = pixels,
+                width = width.toInt(),
+                height = height.toInt(),
+            ) {
+                charBuffer.limit(limit)
+                charBuffer.position(chars.first)
+                STBTruetype.stbtt_PackSetOversampling(context, 2, 2)
+                context.packFontRange(
+                    fontByteBuffer = container,
+                    fontIndex = 0,
+                    fontSize = height.toFloat(),
+                    firstUnicodeCharInRange = chars.first,
+                    charBufferForRange = charBuffer,
+                )
+                charBuffer.clear()
+            }
+        }
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, id)
+        GLFWUtil.texImage2D(
+            textureTarget = GL11.GL_TEXTURE_2D,
+            textureInternalFormat = GL11.GL_ALPHA,
+//            textureInternalFormat = GL11.GL_RED, // todo
+            width = width.toInt(),
+            height = height.toInt(),
+            texelDataFormat = GL11.GL_ALPHA,
+            texelDataType = GL11.GL_UNSIGNED_BYTE,
+            pixels = pixels,
+        )
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR)
         return FontTexture(
             id = id,
             charBuffer = charBuffer,
@@ -139,10 +216,6 @@ internal class TextsEngineLogics(
         return fonts.textures.getOrPut(fontHeight) {
             fonts.info.toFontTexture(fontHeight = fontHeight)
         }
-    }
-
-    init {
-        val stbFontInfo = getFonts("JetBrainsMono.ttf").info
     }
 
     private fun drawFontNameStrings(canvas: Canvas, stbFontInfo: STBFontInfo) {
@@ -207,6 +280,16 @@ internal class TextsEngineLogics(
         }
     }
 
+    private fun getCharsWidth(info: STBFontInfo, chars: CharSequence, fontHeight: Float): Float {
+        return MemoryStack.stackPush().use { stack ->
+            val widthBuffer = stack.mallocInt(1)
+            chars.sumOf { char ->
+                STBTruetype.stbtt_GetCodepointHMetrics(info.delegate, char.code, widthBuffer, null)
+                widthBuffer.get(0)
+            }
+        } * getScale(info = info.delegate, fontHeight = fontHeight)
+    }
+
     private fun drawFontChars(canvas: Canvas, stbFontInfo: STBFontInfo) {
         val chars = (32..126).map { it.toChar() }
 //        val chars = (Char.MIN_VALUE..Char.MAX_VALUE).toList()
@@ -240,11 +323,140 @@ internal class TextsEngineLogics(
         }
     }
 
-    override fun onRender(canvas: Canvas) {
+    private fun STBTTAlignedQuad.draw() {
+        GL11.glTexCoord2f(s0(), t0())
+        GLUtil.vertexOf(x0(), y0())
+        GL11.glTexCoord2f(s1(), t0())
+        GLUtil.vertexOf(x1(), y0())
+        GL11.glTexCoord2f(s1(), t1())
+        GLUtil.vertexOf(x1(), y1())
+        GL11.glTexCoord2f(s0(), t1())
+        GLUtil.vertexOf(x0(), y1())
+    }
+
+    private fun drawText(
+        info: STBFontInfo,
+        fontHeight: Float,
+        fontTexture: FontTexture,
+        text: CharSequence,
+    ) {
+        val xTopLeft = 24f
+        val yTopLeft = 24f
+        val color = Color.Green
+        val fontVMetrics = info.delegate.toFontVMetrics(fontHeight = fontHeight)
+//        val fontHeight = fontVMetrics.ascent - fontVMetrics.descent
+        val xBuffer = BufferUtils.createFloatBuffer(1)
+        val yBuffer = BufferUtils.createFloatBuffer(1)
+        xBuffer.put(0, xTopLeft.toFloat())
+        yBuffer.put(0, (yTopLeft + fontVMetrics.ascent).toFloat())
+        GLUtil.enabled(GL11.GL_TEXTURE_2D) {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, fontTexture.id)
+            GLUtil.colorOf(color)
+            STBTTAlignedQuad.malloc().use { quad ->
+                GLUtil.transaction(GL11.GL_QUADS) {
+                    for (char in text) {
+                        STBUtil.getPackedQuad(
+                            buffer = fontTexture.charBuffer,
+                            fontHeight = fontHeight,
+                            index = char.code,
+                            xBuffer = xBuffer,
+                            yBuffer = yBuffer,
+                            quad = quad,
+                        )
+                        quad.draw()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun drawTextOld(
+        info: STBFontInfo,
+        fontHeight: Float,
+        fontTexture: FontTexture,
+        text: CharSequence,
+    ) {
+        val xTopLeft = 24f
+        val yTopLeft = 24f
+        val color = Color.Green
+        val scale = STBTruetype.stbtt_ScaleForPixelHeight(info.delegate, fontHeight)
+        val ascentBuffer = BufferUtils.createIntBuffer(1)
+        val descentBuffer = BufferUtils.createIntBuffer(1)
+        STBTruetype.stbtt_GetFontVMetrics(info.delegate, ascentBuffer, descentBuffer, null)
+//        val fontHeight = info.metrics.ascent - info.metrics.descent
+//        val xBuffer = BufferUtils
+//            .createFloatBuffer(1)
+//            .put(xTopLeft)
+//            .flip()
+//        val yBuffer = BufferUtils
+//            .createFloatBuffer(1)
+//            .put(yTopLeft + ascentBuffer[0] * scale)
+//            .flip()
+        val xBuffer = BufferUtils.createFloatBuffer(1)
+        val yBuffer = BufferUtils.createFloatBuffer(1)
+        xBuffer.put(0, xTopLeft.toFloat())
+        yBuffer.put(0, (yTopLeft + ascentBuffer[0] * scale).toFloat())
+//        yBuffer.put(0, yTopLeft.toFloat())
+        GLUtil.enabled(GL11.GL_TEXTURE_2D) {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, fontTexture.id)
+            GLUtil.colorOf(color)
+            STBTTAlignedQuad.malloc().use { quad ->
+                GLUtil.transaction(GL11.GL_QUADS) {
+                    for (char in text) {
+//                        val width = getCharWidth(info = info, char = char) * scale
+                        val width = fontHeight * 128.0
+                        val height = fontHeight
+//                        val height = fontHeight * 16.0
+                        STBTruetype.stbtt_GetPackedQuad(
+                            fontTexture.charBuffer,
+                            width.toInt(),
+                            height.toInt(),
+                            char.code,
+                            xBuffer,
+                            yBuffer,
+                            quad,
+                            false,
+                        )
+                        quad.draw()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun drawText(
+        fontName: String,
+        fontHeight: Float,
+        text: CharSequence,
+    ) {
         val fonts = getFonts(fontName)
+        val fontTexture = fonts.textures.getOrPut(fontHeight) {
+            fonts.info.toFontTexture(fontHeight = fontHeight)
+        }
+        drawText(
+            info = fonts.info,
+            fontHeight = fontHeight,
+            fontTexture = fontTexture,
+            text = text,
+        )
+    }
+
+    override fun onRender(canvas: Canvas) {
 //        drawFontNameStrings(canvas = canvas)
 //        drawFontVMetrics(canvas = canvas, stbFontInfo = stbFontInfo)
-        drawFontChars(canvas = canvas, stbFontInfo = fonts.info)
+//        drawFontChars(canvas = canvas, stbFontInfo = fonts.info)
+        val fontHeight = 2.0
+        val text = "foo bar baz"
+//        canvas.polygons.drawRectangle(
+//            color = Color.White,
+//            pointTopLeft = pointOf(0, 0),
+//            size = sizeOf(width = 512, height = 512),
+//        )
+        drawText(
+            fontName = fontName,
+            fontHeight = measure.transform(2.0).toFloat(),
+            text = text,
+        )
 //        canvas.texts.draw(
 //            color = Color.White,
 //            info = fontInfo,
@@ -252,6 +464,14 @@ internal class TextsEngineLogics(
 //            text = "foo bar baz",
 //            measure = measure,
 //        )
+        val textWidth = getCharsWidth(info = getFonts(fontName).info, chars = text, fontHeight = fontHeight.toFloat())
+        canvas.polygons.drawRectangle(
+            color = Color.Yellow.copy(alpha = 0.75f),
+            pointTopLeft = pointOf(1, 1),
+            size = sizeOf(width = textWidth.toDouble(), height = fontHeight),
+            lineWidth = 0.05,
+            measure = measure,
+        )
     }
 
     override fun shouldEngineStop(): Boolean {
