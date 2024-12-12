@@ -1,5 +1,6 @@
 package test.lwjgl.texts
 
+import org.lwjgl.BufferUtils
 import org.lwjgl.stb.STBTTFontinfo
 import org.lwjgl.stb.STBTruetype
 import sp.kx.lwjgl.engine.Engine
@@ -15,6 +16,7 @@ import sp.kx.math.pointOf
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.IntBuffer
 
 internal class TextsEngineLogics(
     private val engine: Engine,
@@ -75,8 +77,39 @@ internal class TextsEngineLogics(
         }
     }
 
+    private fun drawFontVMetrics(canvas: Canvas) {
+        val ascentBuffer = BufferUtils.createIntBuffer(1)
+        val descentBuffer = BufferUtils.createIntBuffer(1)
+        val lineGapBuffer = BufferUtils.createIntBuffer(1)
+        STBTruetype.stbtt_GetFontVMetrics(fontSTBInfo, ascentBuffer, descentBuffer, lineGapBuffer)
+        val ascent = ascentBuffer[0]
+        val descent = descentBuffer[0]
+        canvas.texts.draw(
+            color = Color.White,
+            info = fontInfo,
+            pointTopLeft = pointOf(1, 1),
+            text = "ascent: $ascent",
+            measure = measure,
+        )
+        canvas.texts.draw(
+            color = Color.White,
+            info = fontInfo,
+            pointTopLeft = pointOf(1, 2),
+            text = "descent: $descent",
+            measure = measure,
+        )
+        canvas.texts.draw(
+            color = Color.White,
+            info = fontInfo,
+            pointTopLeft = pointOf(1, 3),
+            text = "lineGap: ${lineGapBuffer[0]}",
+            measure = measure,
+        )
+    }
+
     override fun onRender(canvas: Canvas) {
 //        drawFontNameStrings(canvas = canvas)
+        drawFontVMetrics(canvas = canvas)
 //        canvas.texts.draw(
 //            color = Color.White,
 //            info = fontInfo,
