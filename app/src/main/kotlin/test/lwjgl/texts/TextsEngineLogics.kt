@@ -8,6 +8,7 @@ import org.lwjgl.stb.STBTTPackContext
 import org.lwjgl.stb.STBTTPackedchar
 import org.lwjgl.stb.STBTruetype
 import org.lwjgl.system.MemoryStack
+import org.lwjgl.system.MemoryUtil
 import sp.kx.lwjgl.engine.Engine
 import sp.kx.lwjgl.engine.EngineInputCallback
 import sp.kx.lwjgl.engine.EngineLogics
@@ -53,8 +54,8 @@ internal class TextsEngineLogics(
         }
     }
     private val measure = measureOf(24.0)
-    private val fontName = "JetBrainsMono.ttf"
-//    private val fontName = "OpenSans.ttf"
+//    private val fontName = "JetBrainsMono.ttf"
+    private val fontName = "OpenSans.ttf"
     private val fontInfo = object : FontInfo {
         override val height = measure.transform(0.75).toFloat()
         override val id = fontName
@@ -67,6 +68,7 @@ internal class TextsEngineLogics(
     private class STBFontInfo(
         val container: ByteBuffer,
         val delegate: STBTTFontinfo,
+        val chars: IntRange,
     )
 
     private class FontTexture(
@@ -74,6 +76,7 @@ internal class TextsEngineLogics(
         val charBuffer: STBTTPackedchar.Buffer,
         val width: Int,
         val height: Int,
+        val ascent: Float,
     )
 
     private class MutableFonts(
@@ -90,6 +93,8 @@ internal class TextsEngineLogics(
                 container = ByteBuffer.allocateDirect(fontBytes.size).order(ByteOrder.nativeOrder()).put(fontBytes)
                     .flip(),
                 delegate = STBTTFontinfo.create(),
+//                chars = 0..126,
+                chars = 32..126,
             )
             STBTruetype.stbtt_InitFont(info.delegate, info.container)
             MutableFonts(
@@ -104,31 +109,97 @@ internal class TextsEngineLogics(
     }
 
     private fun STBFontInfo.toFontTexture(fontHeight: Float): FontTexture {
-        val width: Int = (fontHeight * 128.0).toInt()
-        val height: Int = (fontHeight * 16.0).toInt()
-        val limit = Char.MAX_VALUE.code
+//        val oversample = 1
+//        val oversample = 2
+        val oversample = 8
+        val scale = getScale(info = delegate, fontHeight = fontHeight)
+        val ascentBuffer = BufferUtils.createIntBuffer(1)
+        STBTruetype.stbtt_GetFontVMetrics(delegate, ascentBuffer, null, null)
+        val charsWidth = MemoryStack.stackPush().use { stack ->
+            val widthBuffer = stack.mallocInt(1)
+            chars.sumOf { char ->
+                STBTruetype.stbtt_GetCodepointHMetrics(delegate, char, widthBuffer, null)
+                widthBuffer.get(0)
+            }
+        }
+//        val charWidth = MemoryStack.stackPush().use { stack ->
+//            val widthBuffer = stack.mallocInt(1)
+//            chars.maxOf { char ->
+//                STBTruetype.stbtt_GetCodepointHMetrics(delegate, char, widthBuffer, null)
+//                widthBuffer.get(0)
+//            }
+//        }
+        val charWidth = getCharWidth(info = this, char = 'm')
+//        val width: Int = (fontHeight * 128.0).toInt()
+        val limit = chars.last - chars.first + 1
+//        val width: Int = (fontHeight / 3 * limit).toInt()
+//        val width: Int = (fontHeight / 3 * limit * oversample).toInt()
+//        val width: Int = (fontHeight * 64 * oversample).toInt() + 3
+        val width: Int = (fontHeight * oversample).toInt() * 32
+//        val width: Int = (charWidth * scale * oversample).toInt() * 64
+//        val width: Int = ((1 shl 11) * oversample).toInt()
+//        val width: Int = (fontHeight * 128 * oversample).toInt()
+//        val width: Int = (charsWidth * oversample * oversample).toInt()
+//        val width: Int = (charsWidth * scale).toInt()
+//        val width: Int = (charsWidth * scale * oversample).toInt()
+//        val width: Int = (charWidth * scale * limit).toInt()
+//        val width: Int = (charWidth * scale * limit * oversample).toInt()
+//        val width: Int = (charsWidth * scale * oversample * oversample).toInt()
+//        val width: Int = (fontHeight * oversample * oversample).toInt()
+//        val height: Int = (fontHeight * 16.0).toInt()
+//        val height: Int = (fontHeight * 8.0).toInt()
+//        val height: Int = (fontHeight * 4.0).toInt()
+//        val height: Int = (fontHeight * 2.0).toInt()
+//        val height: Int = (fontHeight * oversample).toInt()
+        val height: Int = (fontHeight * oversample).toInt()
+//        val height: Int = (fontHeight * oversample * oversample).toInt()
+//        val height: Int = fontHeight.toInt()
+//        val chars = Char.MIN_VALUE.code..Char.MAX_VALUE.code
+//        val limit = chars.toList().size
+//        val limit = Char.MAX_VALUE.code
+//        val position = Char.MIN_VALUE.code
+        val position = 0
+//        val position = chars.first
+        println("fontHeight: $fontHeight")
+        println("charWidth: ${charWidth * scale}")
+        println("charsWidth: $charsWidth")
+        println("f % 4: ${fontHeight % 4}")
+        println("f / 3: ${fontHeight / 3}")
+        println("c * s: ${charsWidth * scale}")
+        println("f * l: ${fontHeight * limit}")
+        println("scale: $scale")
+        println("width: $width")
+        println("height: $height")
+        println("oversample: $oversample")
+        println("limit: $limit")
+        println("position: $position")
         val charBuffer = STBTTPackedchar.malloc(limit)
-        val position = Char.MIN_VALUE.code
-        val fontVMetrics = delegate.toFontVMetrics(fontHeight = fontHeight)
+        println("ascent: ${ascentBuffer[0] * scale}")
+//        val pixels = BufferUtils.createByteBuffer(width * height)
         val pixels = BufferUtils.createByteBuffer(width * height)
         STBTTPackContext.malloc().use { context ->
-            context.pack(
-                pixels = pixels,
-                width = width,
-                height = height,
-            ) {
-                charBuffer.limit(limit)
-                charBuffer.position(position)
-                STBTruetype.stbtt_PackSetOversampling(context, 2, 2)
-                context.packFontRange(
-                    fontByteBuffer = container,
-                    fontIndex = 0,
-                    fontSize = fontVMetrics.ascent - fontVMetrics.descent,
-                    firstUnicodeCharInRange = position,
-                    charBufferForRange = charBuffer,
-                )
-                charBuffer.clear()
-            }
+//            val padding = 0
+            val padding = 1
+            val strideInBytes = 0
+            STBTruetype.stbtt_PackBegin(
+                context,
+                pixels,
+                width,
+                height,
+                strideInBytes,
+                padding,
+                MemoryUtil.NULL,
+            )
+            STBTruetype.stbtt_PackSetOversampling(context, oversample, oversample)
+            context.packFontRange(
+                fontByteBuffer = container,
+                fontIndex = 0,
+                fontSize = fontHeight,
+                firstUnicodeCharInRange = chars.first,
+                charBufferForRange = charBuffer,
+            )
+            charBuffer.clear()
+            STBTruetype.stbtt_PackEnd(context)
         }
         val textureId = GL11.glGenTextures()
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId)
@@ -148,6 +219,7 @@ internal class TextsEngineLogics(
             charBuffer = charBuffer,
             width = width,
             height = height,
+            ascent = ascentBuffer[0] * scale,
         )
     }
 
@@ -218,6 +290,7 @@ internal class TextsEngineLogics(
             charBuffer = charBuffer,
             width = width,
             height = height,
+            ascent = ascentBuffer[0] * scale,
         )
     }
 
@@ -346,31 +419,32 @@ internal class TextsEngineLogics(
 
     private fun drawText(
         info: STBFontInfo,
-        fontHeight: Float,
         fontTexture: FontTexture,
         text: CharSequence,
         xTopLeft: Float,
         yTopLeft: Float,
     ) {
         val color = Color.Green
-        val fontVMetrics = info.delegate.toFontVMetrics(fontHeight = fontHeight)
+//        val fontVMetrics = info.delegate.toFontVMetrics(fontHeight = fontHeight)
 //        val fontHeight = fontVMetrics.ascent - fontVMetrics.descent
         val xBuffer = BufferUtils.createFloatBuffer(1)
         val yBuffer = BufferUtils.createFloatBuffer(1)
         xBuffer.put(0, xTopLeft.toFloat())
 //        yBuffer.put(0, (yTopLeft + fontVMetrics.ascent).toFloat())
-        yBuffer.put(0, yTopLeft + fontVMetrics.ascent)
+        yBuffer.put(0, yTopLeft + fontTexture.ascent)
         GLUtil.enabled(GL11.GL_TEXTURE_2D) {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, fontTexture.id)
             GLUtil.colorOf(color)
             STBTTAlignedQuad.malloc().use { quad ->
                 GLUtil.transaction(GL11.GL_QUADS) {
                     for (char in text) {
+                        val index = info.chars.indexOf(char.code)
+                        if (index < 0) continue
                         STBTruetype.stbtt_GetPackedQuad(
                             fontTexture.charBuffer,
                             fontTexture.width,
                             fontTexture.height,
-                            char.code,
+                            index,
                             xBuffer,
                             yBuffer,
                             quad,
@@ -449,7 +523,6 @@ internal class TextsEngineLogics(
         }
         drawText(
             info = fonts.info,
-            fontHeight = fontHeight,
             fontTexture = fontTexture,
             text = text,
             xTopLeft = pointTopLeft.x.toFloat(),
@@ -465,7 +538,7 @@ internal class TextsEngineLogics(
     ) {
         drawText(
             fontName = fontName,
-            fontHeight = measure.transform(2.0).toFloat(),
+            fontHeight = measure.transform(fontHeight).toFloat(),
             text = text,
             pointTopLeft = pointTopLeft + measure,
         )
@@ -496,12 +569,21 @@ internal class TextsEngineLogics(
         return String(chars.map { it.toChar() }.toCharArray())
     }
 
+    init {
+//        println((32 * 1) until (32 * 2))
+//        println(toCharSequence((32 * 1) until (32 * 2)))
+//        println((32 * 2) until (32 * 3))
+//        println(toCharSequence((32 * 2) until (32 * 3)))
+//        println((32 * 3)..126)
+//        println(toCharSequence((32 * 3)..126))
+    }
+
     override fun onRender(canvas: Canvas) {
-        val fontHeight = 2.0
+        val fontHeight = 1.8
         drawText(
             canvas = canvas,
             fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 1),
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 0),
             text = "the quick brown fox jumps over the lazy dog",
         )
         drawText(
@@ -513,13 +595,13 @@ internal class TextsEngineLogics(
         drawText(
             canvas = canvas,
             fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 3),
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 4),
             text = toCharSequence((32 * 2) until (32 * 3)),
         )
         drawText(
             canvas = canvas,
             fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 4),
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 6),
             text = toCharSequence((32 * 3) until (32 * 4)),
         )
     }
