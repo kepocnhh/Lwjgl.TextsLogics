@@ -24,10 +24,14 @@ import sp.kx.lwjgl.stb.pack
 import sp.kx.lwjgl.stb.packFontRange
 import sp.kx.lwjgl.stb.toFontVMetrics
 import sp.kx.lwjgl.util.toArray
+import sp.kx.math.Point
+import sp.kx.math.copy
 import sp.kx.math.measure.measureOf
 import sp.kx.math.plus
 import sp.kx.math.pointOf
 import sp.kx.math.sizeOf
+import sp.kx.math.toVector
+import sp.kx.math.vectorOf
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -68,6 +72,8 @@ internal class TextsEngineLogics(
     private class FontTexture(
         val id: Int,
         val charBuffer: STBTTPackedchar.Buffer,
+        val width: Int,
+        val height: Int,
     )
 
     private class MutableFonts(
@@ -140,6 +146,8 @@ internal class TextsEngineLogics(
         return FontTexture(
             id = textureId,
             charBuffer = charBuffer,
+            width = width,
+            height = height,
         )
     }
 
@@ -208,6 +216,8 @@ internal class TextsEngineLogics(
         return FontTexture(
             id = id,
             charBuffer = charBuffer,
+            width = width,
+            height = height,
         )
     }
 
@@ -339,29 +349,32 @@ internal class TextsEngineLogics(
         fontHeight: Float,
         fontTexture: FontTexture,
         text: CharSequence,
+        xTopLeft: Float,
+        yTopLeft: Float,
     ) {
-        val xTopLeft = 24f
-        val yTopLeft = 24f
         val color = Color.Green
         val fontVMetrics = info.delegate.toFontVMetrics(fontHeight = fontHeight)
 //        val fontHeight = fontVMetrics.ascent - fontVMetrics.descent
         val xBuffer = BufferUtils.createFloatBuffer(1)
         val yBuffer = BufferUtils.createFloatBuffer(1)
         xBuffer.put(0, xTopLeft.toFloat())
-        yBuffer.put(0, (yTopLeft + fontVMetrics.ascent).toFloat())
+//        yBuffer.put(0, (yTopLeft + fontVMetrics.ascent).toFloat())
+        yBuffer.put(0, yTopLeft + fontVMetrics.ascent)
         GLUtil.enabled(GL11.GL_TEXTURE_2D) {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, fontTexture.id)
             GLUtil.colorOf(color)
             STBTTAlignedQuad.malloc().use { quad ->
                 GLUtil.transaction(GL11.GL_QUADS) {
                     for (char in text) {
-                        STBUtil.getPackedQuad(
-                            buffer = fontTexture.charBuffer,
-                            fontHeight = fontHeight,
-                            index = char.code,
-                            xBuffer = xBuffer,
-                            yBuffer = yBuffer,
-                            quad = quad,
+                        STBTruetype.stbtt_GetPackedQuad(
+                            fontTexture.charBuffer,
+                            fontTexture.width,
+                            fontTexture.height,
+                            char.code,
+                            xBuffer,
+                            yBuffer,
+                            quad,
+                            false,
                         )
                         quad.draw()
                     }
@@ -428,6 +441,7 @@ internal class TextsEngineLogics(
         fontName: String,
         fontHeight: Float,
         text: CharSequence,
+        pointTopLeft: Point,
     ) {
         val fonts = getFonts(fontName)
         val fontTexture = fonts.textures.getOrPut(fontHeight) {
@@ -438,39 +452,75 @@ internal class TextsEngineLogics(
             fontHeight = fontHeight,
             fontTexture = fontTexture,
             text = text,
+            xTopLeft = pointTopLeft.x.toFloat(),
+            yTopLeft = pointTopLeft.y.toFloat(),
         )
     }
 
-    override fun onRender(canvas: Canvas) {
-//        drawFontNameStrings(canvas = canvas)
-//        drawFontVMetrics(canvas = canvas, stbFontInfo = stbFontInfo)
-//        drawFontChars(canvas = canvas, stbFontInfo = fonts.info)
-        val fontHeight = 2.0
-        val text = "foo bar baz"
-//        canvas.polygons.drawRectangle(
-//            color = Color.White,
-//            pointTopLeft = pointOf(0, 0),
-//            size = sizeOf(width = 512, height = 512),
-//        )
+    private fun drawText(
+        canvas: Canvas,
+        fontHeight: Double,
+        pointTopLeft: Point,
+        text: CharSequence,
+    ) {
         drawText(
             fontName = fontName,
             fontHeight = measure.transform(2.0).toFloat(),
             text = text,
+            pointTopLeft = pointTopLeft + measure,
         )
-//        canvas.texts.draw(
-//            color = Color.White,
-//            info = fontInfo,
-//            pointTopLeft = pointOf(1, 1),
-//            text = "foo bar baz",
-//            measure = measure,
-//        )
         val textWidth = getCharsWidth(info = getFonts(fontName).info, chars = text, fontHeight = fontHeight.toFloat())
         canvas.polygons.drawRectangle(
             color = Color.Yellow.copy(alpha = 0.75f),
-            pointTopLeft = pointOf(1, 1),
+            pointTopLeft = pointTopLeft,
             size = sizeOf(width = textWidth.toDouble(), height = fontHeight),
             lineWidth = 0.05,
             measure = measure,
+        )
+        val fontVMetrics = getFonts(fontName).info.delegate.toFontVMetrics(fontHeight = fontHeight.toFloat())
+        canvas.vectors.draw(
+            color = Color.White.copy(alpha = 0.75f),
+//            vector = vectorOf(1.0, 1.0 + fontVMetrics.ascent, 1.0 + textWidth, 1.0 + fontVMetrics.ascent),
+            vector = pointTopLeft.copy(
+                y = pointTopLeft.y + fontVMetrics.ascent,
+            ) + pointTopLeft.copy(
+                x = pointTopLeft.x + textWidth,
+                y = pointTopLeft.y + fontVMetrics.ascent,
+            ),
+            lineWidth = 0.05,
+            measure = measure,
+        )
+    }
+
+    private fun toCharSequence(chars: Iterable<Int>): CharSequence {
+        return String(chars.map { it.toChar() }.toCharArray())
+    }
+
+    override fun onRender(canvas: Canvas) {
+        val fontHeight = 2.0
+        drawText(
+            canvas = canvas,
+            fontHeight = fontHeight,
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 1),
+            text = "the quick brown fox jumps over the lazy dog",
+        )
+        drawText(
+            canvas = canvas,
+            fontHeight = fontHeight,
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 2),
+            text = toCharSequence((32 * 1) until (32 * 2)),
+        )
+        drawText(
+            canvas = canvas,
+            fontHeight = fontHeight,
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 3),
+            text = toCharSequence((32 * 2) until (32 * 3)),
+        )
+        drawText(
+            canvas = canvas,
+            fontHeight = fontHeight,
+            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 4),
+            text = toCharSequence((32 * 3) until (32 * 4)),
         )
     }
 
