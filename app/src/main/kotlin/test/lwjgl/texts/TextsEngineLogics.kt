@@ -53,6 +53,7 @@ internal class TextsEngineLogics(
             }
         }
     }
+    private val renders = Renders()
     private val measure = measureOf(24.0)
 //    private val fontName = "JetBrainsMono.ttf"
     private val fontName = "OpenSans.ttf"
@@ -579,31 +580,32 @@ internal class TextsEngineLogics(
     }
 
     override fun onRender(canvas: Canvas) {
-        val fontHeight = 1.8
-        drawText(
-            canvas = canvas,
-            fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 0),
-            text = "the quick brown fox jumps over the lazy dog",
-        )
-        drawText(
-            canvas = canvas,
-            fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 2),
-            text = toCharSequence((32 * 1) until (32 * 2)),
-        )
-        drawText(
-            canvas = canvas,
-            fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 4),
-            text = toCharSequence((32 * 2) until (32 * 3)),
-        )
-        drawText(
-            canvas = canvas,
-            fontHeight = fontHeight,
-            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 6),
-            text = toCharSequence((32 * 3) until (32 * 4)),
-        )
+        renders.onRenderTexts()
+//        val fontHeight = 1.8
+//        drawText(
+//            canvas = canvas,
+//            fontHeight = fontHeight,
+//            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 0),
+//            text = "the quick brown fox jumps over the lazy dog",
+//        )
+//        drawText(
+//            canvas = canvas,
+//            fontHeight = fontHeight,
+//            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 2),
+//            text = toCharSequence((32 * 1) until (32 * 2)),
+//        )
+//        drawText(
+//            canvas = canvas,
+//            fontHeight = fontHeight,
+//            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 4),
+//            text = toCharSequence((32 * 2) until (32 * 3)),
+//        )
+//        drawText(
+//            canvas = canvas,
+//            fontHeight = fontHeight,
+//            pointTopLeft = pointOf(1.0, 1.0 + fontHeight * 6),
+//            text = toCharSequence((32 * 3) until (32 * 4)),
+//        )
     }
 
     override fun shouldEngineStop(): Boolean {
