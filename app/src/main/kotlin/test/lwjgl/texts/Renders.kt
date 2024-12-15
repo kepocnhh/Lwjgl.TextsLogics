@@ -179,5 +179,10 @@ internal class Renders {
             yTopLeft = 48f * 7,
             text = toCharSequence((32 * 3) until (32 * 4)),
         )
+        drawText(
+            xTopLeft = 48f,
+            yTopLeft = 48f * 9,
+            text = "GL_UNPACK_ALIGNMENT: ${GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT)}",
+        )
     }
 }
