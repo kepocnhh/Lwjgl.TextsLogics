@@ -111,24 +111,20 @@ internal class Renders {
         GL11.glVertex2f(x0(), y1())
     }
 
+    private val xBuffer = BufferUtils.createFloatBuffer(1)
+    private val yBuffer = BufferUtils.createFloatBuffer(1)
+
     private fun drawText(
         xTopLeft: Float,
         yTopLeft: Float,
         text: CharSequence,
     ) {
         val fontTexture = checkNotNull(fontTexture)
-        val xBuffer = BufferUtils.createFloatBuffer(1)
-        val yBuffer = BufferUtils.createFloatBuffer(1)
         xBuffer.put(0, xTopLeft)
         yBuffer.put(0, yTopLeft + fontTexture.ascent)
         GL11.glEnable(GL11.GL_TEXTURE_2D)
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, fontTexture.id)
-        GL11.glColor4ub(
-            0x00,
-            0xff.toByte(),
-            0x00,
-            0xff.toByte(),
-        )
+        GL11.glColor4ub(0, -1, 0, -1)
         STBTTAlignedQuad.malloc().use { quad ->
             GL11.glBegin(GL11.GL_QUADS)
             for (char in text) {
