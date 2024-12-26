@@ -26,7 +26,7 @@ internal class TextsEngineLogics(
 //    private val renders = STBRenders()
 
     override fun onRender(canvas: Canvas) {
-        renders.onRenderTexts()
+        renders.onRenderTexts(canvas = canvas)
     }
 
     override fun shouldEngineStop(): Boolean {
