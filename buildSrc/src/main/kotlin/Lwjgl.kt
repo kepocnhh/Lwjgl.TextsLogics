@@ -7,6 +7,7 @@ object Lwjgl {
         "lwjgl-glfw",
         "lwjgl-opengl",
         "lwjgl-stb",
+        "lwjgl-freetype",
     )
 
     fun requireNativesName(): String {
