@@ -102,8 +102,8 @@ internal class TrueTypeRenders(
             GL11.GL_UNSIGNED_BYTE,
             buffer,
         )
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE)
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE)
+//        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE)
+//        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE)
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR)
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR)
         return id
@@ -129,18 +129,20 @@ internal class TrueTypeRenders(
         val glyphs = mutableMapOf<Int, Glyph>()
         var width = 0
         var height = 0
-        for (code in 32..126) {
+//        val padding = 0
+        val padding = 4
+        for (code in 33..126) {
             FT_Load_Char(ftFace, code.toLong(), FreeType.FT_LOAD_RENDER).ftChecked()
             val glyph = ftFace.glyph()
             if (glyph == null) {
-                println("$Tag: no glyph by char: \"${code.toChar()}\"")
+                println("$Tag: no glyph by char($code): \"${code.toChar()}\"")
                 continue
             }
             val bitmap = glyph.bitmap()
             val pitch = bitmap.pitch()
             val rows = bitmap.rows()
             if (bitmap.buffer(pitch * rows) == null) {
-                println("$Tag: no bitmap buffer by char: \"${code.toChar()}\"")
+                println("$Tag: no bitmap buffer by char($code): \"${code.toChar()}\"")
                 continue
             }
             height = kotlin.math.max(height, rows)
@@ -162,7 +164,7 @@ internal class TrueTypeRenders(
             if (code == 'a'.code) {
                 println("$Tag: char: \"${code.toChar()}\":\n$message")
             }
-            width += pitch
+            width += pitch + padding
         }
         val id = getTexture(
             width = width,
@@ -277,11 +279,11 @@ internal class TrueTypeRenders(
         GL11.glColor4ub(0, -1, 0, -1)
         val scale = atlas.getScale(fontHeight = fontHeight)
         for (char in chars) {
-            if (char == ' ') {
-                i += atlas.space * scale
+            val glyph = atlas.glyphs[char.code]
+            if (glyph == null) {
+                if (char == ' ') i += atlas.space * scale
                 continue
             }
-            val glyph = atlas.glyphs[char.code] ?: continue
             GL11.glBegin(GL11.GL_QUADS)
             onRenderGlyph(
                 fontHeight = fontHeight,
@@ -386,12 +388,15 @@ internal class TrueTypeRenders(
     }
 
     fun onRenderTexts(canvas: Canvas) {
-        val fontName = "JetBrainsMono.ttf"
-//        val fontName = "OpenSans.ttf"
+//        val fontName = "JetBrainsMono.ttf"
+        val fontName = "OpenSans.ttf"
         val fontHeight = 48
 //        val fontHeight = 64
 //        val fontHeight = 128
 //        val fontHeight = 256
+//        val fontHeight = 300
+//        val fontHeight = 400
+//        val fontHeight = 512
         val atlas = getAtlas(fontName = fontName, fontHeight = fontHeight)
         val x = 24.0
         val y = 24.0
@@ -424,14 +429,14 @@ internal class TrueTypeRenders(
                 continue
             }
             val glyph = atlas.glyphs[char.code] ?: continue
-            onRenderGlyphMetrics(
-                canvas = canvas,
-                fontHeight = fontHeight,
-                atlas = atlas,
-                glyph = glyph,
-                x = i,
-                y = y,
-            )
+//            onRenderGlyphMetrics(
+//                canvas = canvas,
+//                fontHeight = fontHeight,
+//                atlas = atlas,
+//                glyph = glyph,
+//                x = i,
+//                y = y,
+//            )
             i += glyph.advance * scale
         }
         onRenderChars(
