@@ -169,9 +169,7 @@ internal class FTRenders(private val engine: Engine) {
         println("$Tag: size[$fontHeight]:metrics:max_advance: ${metrics.max_advance() shr 6}")
     }
 
-    private fun newFace() {
-//        val fontName = "OpenSans.ttf"
-        val fontName = "JetBrainsMono.ttf"
+    private fun newFace(fontName: String) {
         val fontBytes = Thread.currentThread().contextClassLoader.getResourceAsStream(fontName)!!.use { it.readBytes() }
         val buffer = ByteBuffer
             .allocateDirect(fontBytes.size)
@@ -212,8 +210,7 @@ internal class FTRenders(private val engine: Engine) {
     }
 
     private var texture: Int? = null
-    private var vao: Int? = null
-    private var vbo: Int? = null
+    private val textures = mutableMapOf<Char, Int>()
 
     fun onRenderGlyphSlot(
         canvas: Canvas,
@@ -231,11 +228,6 @@ internal class FTRenders(private val engine: Engine) {
         val advance = gs.advance().x() shr 6
         val xEnd = x + advance
         canvas.vectors.draw(
-            color = Color.Gray.copy(alpha = 0.5f),
-            vector = pointOf(x = 0.0, y = y).let { it + it.copy(x = engine.property.pictureSize.width) },
-            lineWidth = 1.0,
-        )
-        canvas.vectors.draw(
             color = Color.Gray,
             vector = pointOf(x = x, y = y).let { it + it.copy(y = yBot) },
             lineWidth = 1.0,
@@ -243,16 +235,6 @@ internal class FTRenders(private val engine: Engine) {
         canvas.vectors.draw(
             color = Color.Gray,
             vector = pointOf(x = xEnd, y = y).let { it + it.copy(y = yBot) },
-            lineWidth = 1.0,
-        )
-        canvas.vectors.draw(
-            color = Color.Gray.copy(alpha = 0.5f),
-            vector = pointOf(x = 0.0, y = yBot).let { it + it.copy(x = engine.property.pictureSize.width) },
-            lineWidth = 1.0,
-        )
-        canvas.vectors.draw(
-            color = Color.Red.copy(alpha = 0.5f),
-            vector = pointOf(x = 0.0, y = yBase).let { it + it.copy(x = engine.property.pictureSize.width) },
             lineWidth = 1.0,
         )
         canvas.vectors.draw(
@@ -337,15 +319,140 @@ internal class FTRenders(private val engine: Engine) {
         GL11.glVertex2f(x2 + w, y2)
     }
 
+    private fun getTexture(
+        gs: FT_GlyphSlot,
+    ): Int {
+        val id = GL11.glGenTextures()
+        val buffer = gs.bitmap().buffer(gs.bitmap().pitch() * gs.bitmap().rows())
+        if (buffer == null) TODO()
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1)
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, id)
+        GL11.glTexImage2D(
+            GL11.GL_TEXTURE_2D,
+            0,
+            GL11.GL_ALPHA,
+            gs.bitmap().pitch(),
+            gs.bitmap().rows(),
+            0,
+            GL11.GL_ALPHA,
+            GL11.GL_UNSIGNED_BYTE,
+            buffer,
+        )
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR)
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR)
+        return id
+    }
+
+    private fun onRenderChar(
+        ftSize: FT_Size,
+        gs: FT_GlyphSlot,
+        char: Char,
+        x: Float,
+        y: Float,
+    ) {
+        val texture = textures.getOrPut(char) {
+            getTexture(gs = gs)
+        }
+        GL11.glEnable(GL11.GL_TEXTURE_2D)
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture)
+        GL11.glColor4ub(0, -1, 0, -1)
+        GL11.glBegin(GL11.GL_QUADS)
+        //
+        onRenderQuad3(gs = gs, ftSize = ftSize, x = x, y = y)
+        //
+        GL11.glEnd()
+        GL11.glDisable(GL11.GL_TEXTURE_2D)
+    }
+
+    private fun onRenderChars(
+        canvas: Canvas,
+        ftFace: FT_Face,
+        ftSize: FT_Size,
+        chars: CharArray,
+    ) {
+        val x = 24f
+        val y = 24f
+        canvas.vectors.draw(
+            color = Color.Gray.copy(alpha = 0.5f),
+            vector = pointOf(x = 0.0, y = y.toDouble()).let { it + it.copy(x = engine.property.pictureSize.width) },
+            lineWidth = 1.0,
+        )
+        val metrics = ftSize.metrics()
+        val ascender = metrics.ascender() shr 6
+        val yBase = y + ascender
+        canvas.vectors.draw(
+            color = Color.Red.copy(alpha = 0.5f),
+            vector = pointOf(x = 0.0, y = yBase.toDouble()).let { it + it.copy(x = engine.property.pictureSize.width) },
+            lineWidth = 1.0,
+        )
+        val height = metrics.height() shr 6
+        val yBot = y + height
+        canvas.vectors.draw(
+            color = Color.Gray.copy(alpha = 0.5f),
+            vector = pointOf(x = 0.0, y = yBot.toDouble()).let { it + it.copy(x = engine.property.pictureSize.width) },
+            lineWidth = 1.0,
+        )
+//        val max_advance = ftSize.metrics().max_advance() shr 6
+        var xOffset = x
+        for (i in chars.indices) {
+            val char = chars[i]
+            val gs = getGlyphSlot(ftFace = ftFace, char = char) ?: continue
+            onRenderGlyphSlot(
+                canvas = canvas,
+                ftSize = ftSize,
+                gs = gs,
+                x = xOffset.toDouble(),
+                y = y.toDouble(),
+            )
+            onRenderChar(
+                ftSize = ftSize,
+                gs = gs,
+                char = char,
+                x = xOffset,
+                y = y,
+            )
+            xOffset += gs.advance().x() shr 6
+        }
+    }
+
     fun onRenderTexts(canvas: Canvas) {
+//        val fontName = "OpenSans.ttf"
+        val fontName = "JetBrainsMono.ttf"
+        val fontHeight = 256
+        val ftFace = ftFace
+        if (ftFace == null) {
+            newFace(fontName = fontName)
+            setSize(ftFace = this.ftFace!!, fontHeight = fontHeight)
+//            printGlyph(ftFace = this.ftFace!!, char = char)
+            return
+        }
+        val ftSize = ftSize
+        if (ftSize == null) {
+            this.ftSize = ftFace.size() ?: TODO("No size!")
+            return
+        }
+        val chars = charArrayOf('a', 'f', 'p', '+', '|')
+        onRenderChars(
+            canvas = canvas,
+            ftFace = ftFace,
+            ftSize = ftSize,
+            chars = chars,
+        )
+    }
+
+    fun onRenderTextsOld(canvas: Canvas) {
+        val fontName = "OpenSans.ttf"
+//        val fontName = "JetBrainsMono.ttf"
 //        val fontHeight = 24
 //        val fontHeight = 48
 //        val fontHeight = 128
         val fontHeight = 256
-        val char = 'p'
+        val char = 'f'
         val ftFace = ftFace
         if (ftFace == null) {
-            newFace()
+            newFace(fontName = fontName)
             setSize(ftFace = this.ftFace!!, fontHeight = fontHeight)
             printGlyph(ftFace = this.ftFace!!, char = char)
             return
@@ -377,6 +484,7 @@ internal class FTRenders(private val engine: Engine) {
 //            FT_Render_Glyph(gs, FT_RENDER_MODE_NORMAL).ftChecked()
             val buffer = gs.bitmap().buffer(gs.bitmap().pitch() * gs.bitmap().rows())
             if (buffer == null) TODO()
+            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1)
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, this.texture!!)
             GL11.glTexImage2D(
                 GL11.GL_TEXTURE_2D,
@@ -393,7 +501,6 @@ internal class FTRenders(private val engine: Engine) {
 //            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE)
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR)
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR)
-//            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1)
 //            File("/tmp/image.png").also {
 //                it.delete()
 //                it.writeBytes(buffer!!.toArray())
