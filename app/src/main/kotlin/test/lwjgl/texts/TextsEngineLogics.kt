@@ -22,8 +22,8 @@ internal class TextsEngineLogics(
         }
     }
 //    private val renders = Renders()
-    private val renders = FTRenders(engine = engine)
-//    private val renders = STBRenders()
+//    private val renders = FTRenders(engine = engine)
+    private val renders = TrueTypeRenders(engine = engine)
 
     override fun onRender(canvas: Canvas) {
         renders.onRenderTexts(canvas = canvas)
