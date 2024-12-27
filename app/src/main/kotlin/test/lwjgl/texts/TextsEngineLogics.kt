@@ -22,7 +22,7 @@ internal class TextsEngineLogics(
         }
     }
 //    private val renders = Renders()
-    private val renders = FTRenders()
+    private val renders = FTRenders(engine = engine)
 //    private val renders = STBRenders()
 
     override fun onRender(canvas: Canvas) {
