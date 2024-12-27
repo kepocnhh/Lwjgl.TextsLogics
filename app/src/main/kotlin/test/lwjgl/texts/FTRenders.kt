@@ -44,6 +44,10 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.FloatBuffer
 import java.nio.IntBuffer
+import kotlin.concurrent.thread
+import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 
 internal class FTRenders(private val engine: Engine) {
     private var ftFace: FT_Face? = null
@@ -353,7 +357,12 @@ internal class FTRenders(private val engine: Engine) {
         y: Float,
     ) {
         val texture = textures.getOrPut(char) {
-            getTexture(gs = gs)
+            val id = getTexture(gs = gs)
+            val message = """
+                advance: ${gs.advance().x() shr 6}
+            """.trimIndent()
+            println("$Tag: char: \"$char\"\n$message")
+            id
         }
         GL11.glEnable(GL11.GL_TEXTURE_2D)
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture)
@@ -420,7 +429,8 @@ internal class FTRenders(private val engine: Engine) {
     fun onRenderTexts(canvas: Canvas) {
 //        val fontName = "OpenSans.ttf"
         val fontName = "JetBrainsMono.ttf"
-        val fontHeight = 256
+        val fontHeight = 128
+//        val fontHeight = 256
         val ftFace = ftFace
         if (ftFace == null) {
             newFace(fontName = fontName)

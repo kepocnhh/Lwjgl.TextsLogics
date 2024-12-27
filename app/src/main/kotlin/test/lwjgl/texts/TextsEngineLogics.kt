@@ -21,12 +21,14 @@ internal class TextsEngineLogics(
             }
         }
     }
-//    private val renders = Renders()
-//    private val renders = FTRenders(engine = engine)
-    private val renders = TrueTypeRenders(engine = engine)
+    private val r1 = Renders()
+    private val r2 = FTRenders(engine = engine)
+    private val r3 = TrueTypeRenders(engine = engine)
 
     override fun onRender(canvas: Canvas) {
-        renders.onRenderTexts(canvas = canvas)
+//        r1.onRenderTexts()
+//        r2.onRenderTexts(canvas = canvas)
+        r3.onRenderTexts(canvas = canvas)
     }
 
     override fun shouldEngineStop(): Boolean {

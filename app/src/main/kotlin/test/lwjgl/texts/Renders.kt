@@ -89,7 +89,8 @@ internal class Renders {
     }
 
     init {
-        val fontName = "OpenSans.ttf"
+        val fontName = "JetBrainsMono.ttf"
+//        val fontName = "OpenSans.ttf"
         val fontBytes = Thread.currentThread().contextClassLoader.getResourceAsStream(fontName)!!.use { it.readBytes() }
         fontInfo = STBFontInfo(
             container = BufferUtils.createByteBuffer(fontBytes.size)
